@@ -1,0 +1,8 @@
+{
+  "name": "eip7702-rescue-tool",
+  "version": "1.0.0",
+  "main": "api/revoke.js",
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}
