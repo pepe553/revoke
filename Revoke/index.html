@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EIP-7702 Rescue Tool</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4 font-sans">
+
+  <div class="max-w-md w-full bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
+    <div class="text-center mb-6">
+      <div class="bg-blue-500/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+        <span class="text-2xl">🛡️</span>
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight">Rescue Wallet</h1>
+      <p class="text-slate-400 text-xs mt-2">Revocación nativa de delegaciones EIP-7702</p>
+    </div>
+
+    <!-- Detector de Wallet / Deep Link -->
+    <div id="noWallet" class="hidden space-y-4">
+      <div class="bg-orange-500/10 border border-orange-500/50 p-4 rounded-xl text-orange-200 text-sm">
+        No se detectó una wallet activa. Si estás en móvil, usa el botón de abajo:
+      </div>
+      <button onclick="openMetaMask()" class="w-full bg-[#f6851b] hover:bg-[#e27613] text-white font-bold py-3 rounded-xl transition">
+        Abrir en MetaMask App
+      </button>
+    </div>
+
+    <div id="app" class="space-y-4">
+      <button id="connectBtn" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold transition">
+        Conectar Wallet
+      </button>
+
+      <div id="controls" class="hidden space-y-4">
+        <div class="p-3 bg-slate-900/50 rounded-xl border border-slate-700">
+          <label class="block text-[10px] text-slate-500 font-bold uppercase mb-1">Red a limpiar</label>
+          <select id="network" class="w-full bg-transparent outline-none text-sm">
+            <option value="ethereum">Ethereum (Mainnet)</option>
+            <option value="ronin">Ronin Chain</option>
+          </select>
+        </div>
+        
+        <button id="revokeBtn" class="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 py-4 rounded-xl font-bold shadow-lg">
+          REVOCAR DELEGACIÓN
+        </button>
+      </div>
+    </div>
+
+    <div id="status" class="mt-6 p-4 rounded-xl bg-black/40 text-[10px] hidden break-all font-mono"></div>
+  </div>
+
+  <script>
+    let provider, signer, address;
+
+    function openMetaMask() {
+      const url = window.location.href.replace("https://", "");
+      window.location.href = `https://metamask.app.link/dapp/${url}`;
+    }
+
+    window.onload = () => {
+      if (typeof window.ethereum === 'undefined') document.getElementById('noWallet').classList.remove('hidden');
+    };
+
+    document.getElementById('connectBtn').onclick = async () => {
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      const accounts = await provider.send("eth_requestAccounts", []);
+      address = accounts[0];
+      signer = provider.getSigner();
+      document.getElementById('connectBtn').classList.add('hidden');
+      document.getElementById('controls').classList.remove('hidden');
+    };
+
+    document.getElementById('revokeBtn').onclick = async () => {
+      const status = document.getElementById('status');
+      const network = document.getElementById('network').value;
+      const chainId = network === 'ronin' ? 2020 : 1;
+
+      try {
+        status.classList.remove('hidden');
+        status.innerText = "Firmando autorización...";
+
+        const authPayload = {
+          chain_id: chainId,
+          address: "0x0000000000000000000000000000000000000000",
+          nonce: await provider.getTransactionCount(address)
+        };
+
+        const signature = await provider.send("eth_signTypedData_v4", [
+          address,
+          JSON.stringify({
+            domain: { name: "EIP-7702-Revoke", version: "1", chainId: chainId },
+            message: authPayload,
+            primaryType: "Authorization",
+            types: {
+              EIP712Domain: [{name:"name",type:"string"},{name:"version",type:"string"},{name:"chainId",type:"uint256"}],
+              Authorization: [{name:"chain_id",type:"uint256"},{name:"address",type:"address"},{name:"nonce",type:"uint256"}]
+            }
+          })
+        ]);
+
+        status.innerText = "Sponsor pagando gas y enviando...";
+
+        const res = await fetch('/api/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ authPayload, signature, userAddress: address, network })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          status.innerHTML = `✅ ÉXITO! TxHash: <br>${data.hash}`;
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (e) {
+        status.innerText = "Error: " + e.message;
+      }
+    };
+  </script>
+</body>
+</html>
